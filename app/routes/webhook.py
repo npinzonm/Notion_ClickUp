@@ -1,28 +1,38 @@
-from fastapi import APIRouter, Request, Header
-import hashlib
 import hmac
+import hashlib
+import json
 import os
-
-router = APIRouter()
+from fastapi import APIRouter, Request, Header, HTTPException
+from hmac import compare_digest
 
 router = APIRouter()
 
 @router.post("/webhook")
 async def notion_webhook(request: Request, x_notion_signature: str = Header(None)):
-    body = await request.body()
+    # Obtener el cuerpo de la solicitud como un diccionario
+    body = await request.json()
+
+    # Serializar el cuerpo a JSON sin espacios innecesarios
+    body_json = json.dumps(body, separators=(",", ":"))
+
+    # Obtener el token de verificación de las variables de entorno
     verification_token = os.getenv("NOTION_VERIFICATION_TOKEN")
-
+    
+    # Verificar que el token de verificación esté configurado
     if not verification_token:
-        return {"error": "Token de verificación no configurado"}
+        raise HTTPException(status_code=500, detail="Token de verificación no configurado")
 
-    computed_signature = "sha256=" + hmac.new(
-        verification_token.encode(), body, hashlib.sha256
+    # Calcular la firma esperada (HMAC-SHA256) usando la cadena JSON del cuerpo
+    calculated_signature = "sha256=" + hmac.new(
+        verification_token.encode(), body_json.encode(), hashlib.sha256
     ).hexdigest()
 
-    if computed_signature != x_notion_signature:
-        return {"error": "Firma no válida"}
+    # Comparar la firma calculada con la firma recibida usando comparación segura
+    if not compare_digest(calculated_signature.encode(), x_notion_signature.encode()):
+        raise HTTPException(status_code=401, detail="Firma no válida")
 
-    data = await request.json()
-    print("Webhook recibido:", data)
+    # Si la firma es válida, procesamos el webhook
+    print("Webhook recibido:", body)
     
+    # Responder con un mensaje de éxito
     return {"message": "Webhook recibido correctamente"}
