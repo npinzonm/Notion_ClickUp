@@ -86,6 +86,9 @@ async def receive_notion_event(
     notion_token: str = Header(None)
 ):
     # Verificar el token de verificación de Notion
+    print(f"Received Notion token: {notion_token}")
+    print(f"Expected Notion token: {NOTION_VERIFICATION_TOKEN}")
+    
     if notion_token != NOTION_VERIFICATION_TOKEN:
         return JSONResponse(
             status_code=403,
