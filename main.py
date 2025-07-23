@@ -16,8 +16,9 @@ print("🔑 Token de verificación cargado correctamente")
 app = FastAPI()
 
 # Incluir los routers
-app.include_router(webhook.router)
+app.include_router(webhook.router, prefix="/webhook", tags=["webhook"])
 app.include_router(notion.router, prefix="/notion", tags=["notion"])
+# app.include_router(clickup.router, prefix="/clickup", tags=["clickup"])
 
 
 @app.get("/")
