@@ -91,6 +91,9 @@ async def receive_notion_event(
     print(body.decode("utf-8"))
     # Verificar el token de verificación de Notion
     
+    organizted_data = organize_data(body)
+    print("Organized data:", organizted_data)
+    
     if notion_token != NOTION_VERIFICATION_TOKEN:
         return JSONResponse(
             status_code=403,
