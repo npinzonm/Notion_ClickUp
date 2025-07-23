@@ -7,20 +7,18 @@ import json
 from dotenv import load_dotenv
 load_dotenv()
 
-#Modelo de datos
-
-    
+   
 router = APIRouter()
 
-NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN")
+NOTION_TOKEN_WEBHOOK = os.getenv("NOTION_TOKEN_WEBHOOK")
 
 
 def verify_signature(payload: str, signature: str) -> bool:
-    if NOTION_VERIFICATION_TOKEN is None:
-        raise HTTPException(status_code=500, detail="Falta el NOTION_VERIFICATION_TOKEN en el .env")
+    if NOTION_TOKEN_WEBHOOK is None:
+        raise HTTPException(status_code=500, detail="Falta el NOTION_TOKEN_WEBHOOK en el .env")
 
     calculated_signature = "sha256=" + hmac.new(
-        bytes(NOTION_VERIFICATION_TOKEN, 'utf-8'),
+        bytes(NOTION_TOKEN_WEBHOOK, 'utf-8'),
         bytes(payload, 'utf-8'),
         hashlib.sha256
     ).hexdigest()
@@ -33,8 +31,14 @@ async def notion_webhook(
     request: Request,
     x_notion_signature: str = Header(None)
 ):
+    
+    print("🔗 Recibiendo webhook de Notion")
+    
     body_bytes = await request.body()
     payload_str = body_bytes.decode("utf-8")
+    
+    print("🔗 Payload recibido:", payload_str)
+    print("🔗 Firma recibida:", x_notion_signature)
 
     try:
         data = json.loads(payload_str)
