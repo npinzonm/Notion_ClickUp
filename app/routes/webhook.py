@@ -85,6 +85,16 @@ async def receive_notion_event(
     request: Request,
     notion_token: str = Header(None, alias="x-notion-token")
 ):
+    
+        # Imprimir los headers completos
+    print("📨 Headers recibidos:")
+    for key, value in request.headers.items():
+        print(f"{key}: {value}")
+    
+    # Leer el body completo de la solicitud
+    body = await request.body()
+    print("📦 Body recibido:")
+    print(body.decode("utf-8"))
     # Verificar el token de verificación de Notion
     
     if notion_token != NOTION_VERIFICATION_TOKEN:
@@ -93,11 +103,10 @@ async def receive_notion_event(
             content={"message": "Forbidden: Invalid Notion verification token"}
         )
         
+
     # Procesar el evento de Notion
     try:
         payload = await request.json()
-        
-        print("Received Notion event:", payload)
         
         for page_data in payload:
             page = NotionPage(**page_data)
