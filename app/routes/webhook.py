@@ -49,14 +49,8 @@ async def notion_webhook(
         data = json.loads(payload_str)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="No se pudo decodificar el JSON")
-
-    # 🔒 Validación normal de firma
-    if not x_notion_signature:
-        raise HTTPException(status_code=400, detail="Falta la firma en la cabecera")
-
-    if not verify_signature(payload_str, x_notion_signature):
-        raise HTTPException(status_code=400, detail="Firma inválida")
-
+    
+    print("🔗 Datos decodificados:", data)
     # 📩 Procesar evento real
     print("📩 Webhook recibido:", data)
 
