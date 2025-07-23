@@ -1,14 +1,13 @@
-from typing import  List, Optional
+from typing import  Dict, List, Optional
 from fastapi import APIRouter, Request, Header
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
 import os
+import json
 
 from app.services.notion_service import get_notion_information
 
 #Modelo de datos
-
-
 class PrioridadModel(BaseModel):
     name: str
 
@@ -74,8 +73,8 @@ class GenericProperty(BaseModel):
 class NotionPage(BaseModel):
     object: str
     id: str
-    properties: List[GenericProperty]
-
+    properties: Dict[str, GenericProperty]
+    
 router = APIRouter()
 
 NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN")
@@ -85,11 +84,6 @@ async def receive_notion_event(
     request: Request,
     notion_token: str = Header(None, alias="x-notion-token")
 ):
-    
-        # Imprimir los headers completos
-    print("📨 Headers recibidos:")
-    for key, value in request.headers.items():
-        print(f"{key}: {value}")
     
     # Leer el body completo de la solicitud
     body = await request.body()
@@ -140,3 +134,35 @@ def prepare_clickup_informacion(data: NotionPage) -> dict:
             resultado["subarea_ids"] = [r.id for r in prop.relation]
 
     return resultado
+
+
+def organize_data(raw_data: bytes) -> dict:
+    decoded = raw_data.decode("utf-8")
+
+    split_index = decoded.find('}{"') + 1
+    if split_index == 0:
+        print("❌ No se pudo encontrar el separador entre JSONs.")
+        return {}
+
+    first_json = decoded[:split_index]
+    second_json = decoded[split_index:]
+
+    if not first_json.endswith("}"):
+        first_json += "}"
+    if not second_json.startswith("{"):
+        second_json = "{" + second_json
+
+    try:
+        metadata = json.loads(first_json)
+        values = json.loads(second_json)
+
+        print("🧩 METADATA:")
+        print(json.dumps(metadata, indent=2))
+
+        print("📦 VALUES:")
+        print(json.dumps(values, indent=2))
+
+        return values
+    except json.JSONDecodeError as e:
+        print("❌ Error decodificando JSON:", str(e))
+        return {}
