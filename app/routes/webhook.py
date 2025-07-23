@@ -1,19 +1,11 @@
 import hashlib
 import hmac
-import re
-from typing import List
 from fastapi import APIRouter, HTTPException, Request, Header
-from starlette.responses import JSONResponse
 import os
 import json
 
 from dotenv import load_dotenv
-
-from app.routes.notion import receive_notion_event
 load_dotenv()
-
-from app.model.data_model import *
-from app.services.notion_service import get_notion_information
 
 #Modelo de datos
 
@@ -24,7 +16,6 @@ NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN")
 
 
 def verify_signature(payload: str, signature: str) -> bool:
-
     if NOTION_VERIFICATION_TOKEN is None:
         raise HTTPException(status_code=500, detail="Falta el NOTION_VERIFICATION_TOKEN en el .env")
 
@@ -36,28 +27,39 @@ def verify_signature(payload: str, signature: str) -> bool:
 
     return hmac.compare_digest(calculated_signature, signature)
 
+
 @router.post("/")
 async def notion_webhook(
     request: Request,
-    x_notion_signature: str = Header(None)  
+    x_notion_signature: str = Header(None)
 ):
+    body_bytes = await request.body()
+    payload_str = body_bytes.decode("utf-8")
 
-    body = await request.body()  # Obtiene el cuerpo de la solicitud
-    payload = body.decode("utf-8")  # Convierte bytes a string
-    
+    try:
+        data = json.loads(payload_str)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="No se pudo decodificar el JSON")
+
+    # 🔐 1. Si viene el verification_token (es la primera vez que Notion llama al webhook)
+    if "verification_token" in data:
+        verification_token = data["verification_token"]
+
+        # Opción: guardar el token en archivo temporal
+        with open(".notion_token", "w") as f:
+            f.write(verification_token)
+
+        print("✅ Token de verificación recibido y guardado:", verification_token)
+        return {"message": "Token de verificación recibido y almacenado"}
+
+    # 🔒 2. Validación normal de la firma
     if not x_notion_signature:
         raise HTTPException(status_code=400, detail="Falta la firma en la cabecera")
 
-    # Verifica la firma del payload
-    if not verify_signature(payload, x_notion_signature):
+    if not verify_signature(payload_str, x_notion_signature):
         raise HTTPException(status_code=400, detail="Firma inválida")
 
-    # Convertimos el payload a JSON
-    data = json.loads(payload)
-
-    print("📩 Webhook recibido:", data)  # Debug, puedes guardarlo en logs o BD
+    # 📩 3. Procesar evento real
+    print("📩 Webhook recibido:", data)
 
     return {"message": "Webhook recibido correctamente"}
-
-
-    
