@@ -1,29 +1,36 @@
 import hashlib
 import hmac
-from fastapi import APIRouter, HTTPException, Request, Header
-import os
 import json
+import os
 
-from dotenv import load_dotenv
-load_dotenv()
+from fastapi import APIRouter, HTTPException, Request, Header
 
-   
 router = APIRouter()
-
-NOTION_TOKEN_WEBHOOK = os.getenv("NOTION_TOKEN_WEBHOOK")
 
 
 def verify_signature(payload: str, signature: str) -> bool:
-    if NOTION_TOKEN_WEBHOOK is None:
-        raise HTTPException(status_code=500, detail="Falta el NOTION_TOKEN_WEBHOOK en el .env")
+    try:
+        with open(".notion_token", "r") as f:
+            verification_token = f.read().strip()
+    except FileNotFoundError:
+        print("❌ No se encontró el token de verificación guardado")
+        return False
 
-    calculated_signature = "sha256=" + hmac.new(
-        bytes(NOTION_TOKEN_WEBHOOK, 'utf-8'),
-        bytes(payload, 'utf-8'),
+    hmac_obj = hmac.new(
+        verification_token.encode("utf-8"),
+        payload.encode("utf-8"),
         hashlib.sha256
-    ).hexdigest()
+    )
+    calculated_signature = "sha256=" + hmac_obj.hexdigest()
 
-    return hmac.compare_digest(calculated_signature, signature)
+    is_valid = hmac.compare_digest(calculated_signature, signature)
+
+    if not is_valid:
+        print("❌ Firma inválida")
+        print("Esperada:", calculated_signature)
+        print("Recibida:", signature)
+
+    return is_valid
 
 
 @router.post("/")
@@ -31,12 +38,11 @@ async def notion_webhook(
     request: Request,
     x_notion_signature: str = Header(None)
 ):
-    
     print("🔗 Recibiendo webhook de Notion")
-    
+
     body_bytes = await request.body()
     payload_str = body_bytes.decode("utf-8")
-    
+
     print("🔗 Payload recibido:", payload_str)
 
     try:
@@ -44,25 +50,14 @@ async def notion_webhook(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="No se pudo decodificar el JSON")
 
-    # 🔐 1. Si viene el verification_token (es la primera vez que Notion llama al webhook)
-    if "verification_token" in data:
-        verification_token = data["verification_token"]
-
-        # Opción: guardar el token en archivo temporal
-        with open(".notion_token", "w") as f:
-            f.write(verification_token)
-
-        print("✅ Token de verificación recibido y guardado:", verification_token)
-        return {"message": "Token de verificación recibido y almacenado"}
-
-    # 🔒 2. Validación normal de la firma
+    # 🔒 Validación normal de firma
     if not x_notion_signature:
         raise HTTPException(status_code=400, detail="Falta la firma en la cabecera")
 
     if not verify_signature(payload_str, x_notion_signature):
         raise HTTPException(status_code=400, detail="Firma inválida")
 
-    # 📩 3. Procesar evento real
+    # 📩 Procesar evento real
     print("📩 Webhook recibido:", data)
 
     return {"message": "Webhook recibido correctamente"}
