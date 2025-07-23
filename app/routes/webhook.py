@@ -86,8 +86,6 @@ async def receive_notion_event(
     notion_token: str = Header(None, alias="x-notion-token")
 ):
     # Verificar el token de verificación de Notion
-    print(f"Received Notion token: {notion_token}")
-    print(f"Expected Notion token: {NOTION_VERIFICATION_TOKEN}")
     
     if notion_token != NOTION_VERIFICATION_TOKEN:
         return JSONResponse(
@@ -98,6 +96,8 @@ async def receive_notion_event(
     # Procesar el evento de Notion
     try:
         payload = await request.json()
+        
+        print("Received Notion payload:", payload)
         
         for page_data in payload:
             page = NotionPage(**page_data)
