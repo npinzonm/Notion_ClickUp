@@ -38,7 +38,6 @@ async def notion_webhook(
     payload_str = body_bytes.decode("utf-8")
     
     print("🔗 Payload recibido:", payload_str)
-    print("🔗 Firma recibida:", x_notion_signature)
 
     try:
         data = json.loads(payload_str)
