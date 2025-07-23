@@ -97,12 +97,11 @@ async def receive_notion_event(
     try:
         payload = await request.json()
         
-        print("Received Notion payload:", payload)
+        print("Received Notion event:", payload)
         
         for page_data in payload:
             page = NotionPage(**page_data)
             info_notion = prepare_clickup_informacion(page)
-            print("Data preparada:", info_notion)
             
             info_click = await get_notion_information(info_notion)
             print("Información enriquecida:", info_click)
