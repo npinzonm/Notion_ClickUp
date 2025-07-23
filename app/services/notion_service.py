@@ -5,6 +5,9 @@ from pydantic import BaseModel
 from starlette.responses import JSONResponse
 import os
 
+from dotenv import load_dotenv
+load_dotenv()
+
 #Modelo de datos
 
 class ClickupTaskModel(BaseModel):

@@ -1,171 +1,133 @@
-from typing import  Dict, List, Optional
+import re
+from typing import List
 from fastapi import APIRouter, Request, Header
-from pydantic import BaseModel
 from starlette.responses import JSONResponse
 import os
 import json
 
+from dotenv import load_dotenv
+load_dotenv()
+
+from app.model.data_model import *
 from app.services.notion_service import get_notion_information
 
 #Modelo de datos
-class PrioridadModel(BaseModel):
-    name: str
 
-
-class SelectProperty(BaseModel):
-    type: str
-    label: str
-    select: Optional[PrioridadModel] = None
-
-
-class RelationItem(BaseModel):
-    id: str
-
-
-class RelationProperty(BaseModel):
-    type: str
-    label: str
-    relation: List[RelationItem]
-    
-
-class TitleText(BaseModel):
-    text: dict  # Puede ser más específico si querés
-    plain_text: str
-
-
-class TitleProperty(BaseModel):
-    type: str
-    label: str
-    title: List[TitleText]
-
-
-class StatusModel(BaseModel):
-    name: str
-
-
-class StatusProperty(BaseModel):
-    type: str
-    label: str
-    status: StatusModel
-
-
-class DateModel(BaseModel):
-    start: str
-
-
-class DateProperty(BaseModel):
-    type: str
-    label: str
-    date: DateModel
-
-
-class GenericProperty(BaseModel):
-    id: str
-    type: str
-    label: str
-    select: Optional[PrioridadModel] = None
-    relation: Optional[List[RelationItem]] = None
-    title: Optional[List[TitleText]] = None
-    status: Optional[StatusModel] = None
-    date: Optional[DateModel] = None 
-
-
-class NotionPage(BaseModel):
-    object: str
-    id: str
-    properties: Dict[str, GenericProperty]
     
 router = APIRouter()
 
 NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN")
+
+@router.post("/sendInformation")
+async def receive_notion_webhook(request: Request):
+    body = await request.body()
+    print("Body recibido en /sendInformation:", body)
+    return {"status": "ok"}
+
+
 
 @router.post("/notion")
 async def receive_notion_event(
     request: Request,
     notion_token: str = Header(None, alias="x-notion-token")
 ):
-    
-    # Leer el body completo de la solicitud
-    body = await request.body()
-    print("📦 Body recibido:")
-    print(body.decode("utf-8"))
-    # Verificar el token de verificación de Notion
-    
-    organizted_data = organize_data(body)
-    print("Organized data:", organizted_data)
-    
+
     if notion_token != NOTION_VERIFICATION_TOKEN:
         return JSONResponse(
             status_code=403,
             content={"message": "Forbidden: Invalid Notion verification token"}
-        )
+        )      
         
+    # Leer el body completo de la solicitud
+    body = await request.body()
 
-    # Procesar el evento de Notion
     try:
-        payload = await request.json()
-        
-        for page_data in payload:
-            page = NotionPage(**page_data)
-            info_notion = prepare_clickup_informacion(page)
-            
-            info_click = await get_notion_information(info_notion)
-            print("Información enriquecida:", info_click)
-
-        return {"message": "Procesado correctamente"}
-        
+        organized_data = organize_data(body)
     except Exception as e:
-        print(f"Error processing Notion event: {e}")
+        print("❌ Error organizando datos:", e)
+        return {"error": str(e)}
+
+    try:
+        info_notion = prepare_clickup_informacion(organized_data)
+        complete_information_notion = await get_notion_information(info_notion)
+        print("Información enriquecida de Notion:", complete_information_notion)
+
+        
+        
+
+    except Exception as e:
+        print("❌ Error procesando Notion event:", e)
+        return {"error": str(e)}
+
+    return {"status": "ok"}
+        
+
         
 def prepare_clickup_informacion(data: NotionPage) -> dict:
+    
     resultado = {}
 
-    for prop in data.properties:
-        if prop.label == "✅ Tarea" and prop.title:
-            resultado["titulo"] = prop.title[0].plain_text
-        elif prop.label == "Prioridad" and prop.select:
-            resultado["prioridad"] = prop.select.name
-        elif prop.label == "Subcategoría" and prop.relation:
-            resultado["subcategorias_ids"] = [r.id for r in prop.relation]
-        elif prop.label == "Descripción" and prop.title:
-            resultado["descripcion"] = prop.title[0].plain_text
-        elif prop.label == "Estado" and prop.status:
-            resultado["estado"] = prop.status.name
-        elif prop.label == "Fecha" and prop.date:
-            resultado["fecha"] = prop.date.start
-        elif prop.label == "Subarea" and prop.relation:
-            resultado["subarea_ids"] = [r.id for r in prop.relation]
+    for key, prop in data[0]["properties"].items():
+        if key == "Prioridad" and "name" in prop:
+            resultado["prioridad"] = prop["name"]
+        elif key == "Subcategoría" and "list" in prop:
+            resultado["subcategorias_ids"] = [item["id"] for item in prop["list"]]
+        elif key == "Repetir" and "boolean" in prop:
+            resultado["repetir"] = prop["boolean"]
+        elif key == "Día" and "string" in prop:
+            resultado["dia"] = prop["string"]
+        elif key == "Subárea" and "list" in prop:
+            resultado["subarea_ids"] = [item["id"] for item in prop["list"]]
+        elif key == "Estado" and "name" in prop:
+            resultado["estado"] = prop["name"]
+        elif key == "Tarea" and "list" in prop:
+            if prop["list"]:
+                resultado["titulo"] = prop["list"][0]["plain_text"]
 
     return resultado
 
 
-def organize_data(raw_data: bytes) -> dict:
+def organize_data(raw_data: bytes) -> List[dict]:
     decoded = raw_data.decode("utf-8")
+    
+    # Extraer ID de página
+    page_id_match = re.match(r'^page([a-f0-9\-]+)', decoded)
+    if not page_id_match:
+        raise ValueError("No se encontró el ID de la página")
+    page_id = page_id_match.group(1)    
 
-    split_index = decoded.find('}{"') + 1
-    if split_index == 0:
-        print("❌ No se pudo encontrar el separador entre JSONs.")
-        return {}
+    # Extraer objetos JSON
+    json_matches = re.findall(r'\{.*?\}(?=\{|\Z)', decoded)
+    if len(json_matches) < 2:
+        raise ValueError("No se encontraron los objetos JSON")
+    
+    created_by = json.loads(json_matches[0])
+    properties_raw = json.loads(json_matches[1])
+    
+    
 
-    first_json = decoded[:split_index]
-    second_json = decoded[split_index:]
+    # Solo conservar propiedades que sean tipo dict
+    clean_properties = {}
+    
+    for key, value in properties_raw.items():
+        if isinstance(value, list):
+            # Asumimos que son relaciones o títulos
+            clean_properties[key] = {
+                "type": "list",
+                "list": value
+            }
+        elif isinstance(value, bool):
+            clean_properties[key] = {
+                "type": "boolean",
+                "boolean": value
+            }
+        else:
+            clean_properties[key] = value
+            
 
-    if not first_json.endswith("}"):
-        first_json += "}"
-    if not second_json.startswith("{"):
-        second_json = "{" + second_json
-
-    try:
-        metadata = json.loads(first_json)
-        values = json.loads(second_json)
-
-        print("🧩 METADATA:")
-        print(json.dumps(metadata, indent=2))
-
-        print("📦 VALUES:")
-        print(json.dumps(values, indent=2))
-
-        return values
-    except json.JSONDecodeError as e:
-        print("❌ Error decodificando JSON:", str(e))
-        return {}
+    return [{
+        "object": "page",
+        "id": f"page_{page_id}",
+        "created_by": created_by,
+        "properties": clean_properties
+    }]
