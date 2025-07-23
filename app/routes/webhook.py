@@ -83,7 +83,7 @@ NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN")
 @router.post("/notion")
 async def receive_notion_event(
     request: Request,
-    notion_token: str = Header(None)
+    notion_token: str = Header(None, alias="x-notion-token")
 ):
     # Verificar el token de verificación de Notion
     print(f"Received Notion token: {notion_token}")
