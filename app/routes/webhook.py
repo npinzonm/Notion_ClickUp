@@ -6,7 +6,7 @@ import os
 from fastapi import APIRouter, Request, Header
 from fastapi.exceptions import HTTPException
 
-from app.routes.notion import recibir_webhook_notion
+from app.routes.notion import recibir_webhook_notion, webhook_notion
 
 router = APIRouter()
 
@@ -46,8 +46,6 @@ async def notion_webhook(
     body_bytes = await request.body()
     payload_str = body_bytes.decode("utf-8")
 
-    # 📩 Procesar evento real    
-    await recibir_webhook_notion(payload_str)
-
+    await webhook_notion(payload_str)
 
     return {"message": "Webhook recibido correctamente"}

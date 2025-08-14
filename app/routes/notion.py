@@ -34,11 +34,14 @@ NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN")
 #             content={"message": "Forbidden: Invalid Notion verification token"}
 #         )      
 
+async def webhook_notion(request: Request):
+    print("🔗 Recibiendo webhook de Notion:", request)
+
 async def recibir_webhook_notion(request: Request):
 
     notion_page = NotionPage(**request)
     
-    print("🔗 Recibiendo webhook de Notion:", notion_page)
+    print("🔗 Recibiendo webhook de Notion:", request)
     
     try:
         
