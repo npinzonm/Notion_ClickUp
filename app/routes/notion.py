@@ -22,21 +22,23 @@ AREA = "Área"
 
 NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN")
 
-@router.post("/notion")
-async def receive_notion_event(
-    request: Request,
-    notion_token: str = Header(None, alias="x-notion-token")
-):
+# @router.post("/notion")
+# async def receive_notion_event(
+#     request: Request,
+#     notion_token: str = Header(None, alias="x-notion-token")
+# ):
 
-    if notion_token != NOTION_VERIFICATION_TOKEN:
-        return JSONResponse(
-            status_code=403,
-            content={"message": "Forbidden: Invalid Notion verification token"}
-        )      
+#     if notion_token != NOTION_VERIFICATION_TOKEN:
+#         return JSONResponse(
+#             status_code=403,
+#             content={"message": "Forbidden: Invalid Notion verification token"}
+#         )      
 
-    # Leer el body completo de la solicitud
-    body_bytes = await request.json()
-    notion_page = NotionPage(**body_bytes)
+async def recibir_webhook_notion(request: Request):
+
+    notion_page = NotionPage(**request)
+    
+    print("🔗 Recibiendo webhook de Notion:", notion_page)
     
     try:
         
