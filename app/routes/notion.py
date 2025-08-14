@@ -36,6 +36,12 @@ NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN")
 
 async def webhook_notion(request: Request):
     print("🔗 Recibiendo webhook de Notion:", request)
+    dataJson = await request.json()
+    print("🔗 Datos recibidos de Notion:", dataJson)
+
+    notion_page = NotionPage(**dataJson)
+
+    print("🔗 Recibiendo webhook de Notion:", notion_page)
 
 async def recibir_webhook_notion(request: Request):
 
