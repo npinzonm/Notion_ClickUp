@@ -1,65 +1,77 @@
+from typing import Dict, Optional, List, Union
 from pydantic import BaseModel
-from typing import Optional, List, Union
 
 
-class Text(BaseModel):
-    content: str
-    link: Optional[str] = None
+# Submodelos para cada tipo de propiedad Notion
 
-
-class Annotation(BaseModel):
-    bold: bool = False
-    italic: bool = False
-    strikethrough: bool = False
-    underline: bool = False
-    code: bool = False
-    color: str = "default"
-
-
-class RichTextItem(BaseModel):
-    type: str
-    text: Text
-    annotations: Annotation
-    plain_text: str
-    href: Optional[str] = None
-
-
-class SelectOption(BaseModel):
+class NotionSelect(BaseModel):
     id: str
     name: str
-    color: Optional[str] = None
+    color: str
 
+class NotionStatus(BaseModel):
+    id: str
+    name: str
+    color: str
 
-class DateProperty(BaseModel):
-    start: str
-    end: Optional[str] = None
-    time_zone: Optional[str] = None
-
-
-class RelationItem(BaseModel):
+class NotionRelation(BaseModel):
     id: str
 
-
-class ItemRelationArray(BaseModel):
+class NotionRollupItem(BaseModel):
     type: str
-    relation: Optional[RelationItem]
+    relation: List[NotionRelation]
 
+class NotionRollup(BaseModel):
+    type: str
+    array: List[NotionRollupItem]
+    function: str
+
+class NotionFormula(BaseModel):
+    type: str
+    string: Optional[str]
+
+class NotionDate(BaseModel):
+    start: str
+    end: Optional[str]
+    time_zone: Optional[str]
+
+class NotionTitleText(BaseModel):
+    plain_text: str
+
+class NotionTitle(BaseModel):
+    type: str
+    text: Dict[str, Union[str, None]]
+    plain_text: str
 
 class NotionProperty(BaseModel):
-    id: Optional[str] = None
-    name: Optional[str] = None
-    color: Optional[str] = None
-    label: Optional[str] = None  # Para accederlo desde código
-    title: Optional[List[RichTextItem]] = None
-    select: Optional[SelectOption] = None
-    relation: Optional[List[RelationItem]] = None
-    status: Optional[SelectOption] = None
-    date: Optional[DateProperty] = None
-    string: Optional[str] = None
-    array: Optional[List[ItemRelationArray]] = None
+    id: str
+    type: str
+    title: Optional[List[NotionTitle]] = None
+    select: Optional[NotionSelect] = None
+    checkbox: Optional[bool] = None
+    status: Optional[NotionStatus] = None
+    date: Optional[NotionDate] = None
+    formula: Optional[NotionFormula] = None
+    relation: Optional[List[NotionRelation]] = None
+    rollup: Optional[NotionRollup] = None
+    rich_text: Optional[List] = None
 
+class NotionData(BaseModel):
+    object: str
+    id: str
+    created_time: str
+    last_edited_time: str
+    properties: Dict[str, NotionProperty]
+    url: Optional[str]
+
+class NotionSource(BaseModel):
+    type: str
+    automation_id: Optional[str]
+    action_id: Optional[str]
+    event_id: Optional[str]
+    user_id: Optional[str]
+    attempt: Optional[int]
 
 class NotionPage(BaseModel):
-    object: Optional[str] = None
-    id: Optional[str] = None
-    properties: dict[str, NotionProperty]
+    source: NotionSource
+    data: NotionData

@@ -1,43 +1,31 @@
 import asyncio
 import logging
-from typing import List, Optional
+import re
+from typing import List, Literal
 from fastapi import APIRouter, Request, Header
-from pydantic import BaseModel, Field, ValidationError
-from starlette.responses import JSONResponse
-import os, httpx
+from fastapi.exceptions import HTTPException
+import os
 from dotenv import load_dotenv
+from fastapi.responses import JSONResponse
+import httpx
+from pydantic import BaseModel
+
+from app.services.clickup_service import get_spaces, get_tasks, get_team_id, get_folders
+
+
+load_dotenv()  
 
 router = APIRouter()
 
-# Configuración básica de logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-
-# Modelo para representar un espacio
 class Status(BaseModel):
-    status: str
-    
-class Space(BaseModel):
-    id: str
-    name: str
-    statuses: Optional[List[Status]] = Field(default_factory=list)
-
-class ListFolder(BaseModel):
-    id: str
-    name: str
-
-class Folder(BaseModel):
-    id: str
-    name: str
-    lists: Optional[List[ListFolder]] = Field(default_factory=list)
-
+    status: Literal['Open', 'in progress', 'completed', 'closed']
 
 #Carga de variables de entorno    
 load_dotenv()
 CLICKUP_VERIFICATION_TOKEN = os.getenv("CLICKUP_VERIFICATION_TOKEN")
 
 if( not CLICKUP_VERIFICATION_TOKEN):
-    logging.critical("🚨 ERROR: CLICKUP_VERIFICATION_TOKEN no está configurado. Por favor, configúralo en tu archivo .env")
+    logging.critical("🚨 ERROR: CLICKUP_VERIFICATION_TOKEN no está configurado.")
     raise ValueError("🚨 CLICKUP_VERIFICATION_TOKEN no está configurado")
 
 headers = {
@@ -46,96 +34,110 @@ headers = {
 }
 
 
-# Obtener el ID del team
-async def get_team_id(workspace_name: str = "Nathalie Pinzon's Workspace") -> str:
+
+async def crear_tarea_clickup(notion_page):
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get("https://api.clickup.com/api/v2/team", headers=headers)
-            response.raise_for_status() # Lanza un error si la respuesta no es 200 OK
-            
-            if response.status_code == 200:
-                data = response.json()
-                for team in data.get("teams", []):
-                    if team.get("name") == workspace_name:
-                        return team.get("id")
-                raise Exception(f"Team '{workspace_name}' not found")
+        id_team = await get_team_id()
+        if not id_team:
+            raise ValueError("No se pudo obtener el ID del equipo")
+        else: 
+            print("✅ ID del equipo obtenido:", id_team)
+            spaces = await get_spaces(id_team)
+            if not spaces:
+                raise ValueError("No se pudo obtener los espacios")
             else:
-                raise Exception(f"Error al obtener el team ID: {response.text}")
-    except httpx.HTTPStatusError as e:
-        logging.error(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
-        raise
+               informaciion_area_filtrada = filtrar_areas(spaces, notion_page['Área'])     
+               folders = await get_folders(informaciion_area_filtrada['id'])
+               
+            if not folders:
+                raise ValueError("No se pudo obtener las carpetas")
+            else:
+                list_id = filtrar_folders(folders, notion_page['Subarea'])  
+                
+                prioridad_notion = notion_page['Prioridad']
+                
+                print("🔄 Mapeando prioridad de Notion a ClickUp:", prioridad_notion)
+
+                match prioridad_notion:
+                    case "Urgente e Importante":
+                        prioridad = 1
+                    case "Urgente pero no Importante":
+                        prioridad = 2
+                    case "No Urgente pero Importante":
+                        prioridad = 3
+                    case "No Urgente y no Importante":
+                        prioridad = 4
+                    case _:
+                        prioridad = 0
+
+
+                #Preparar Data para enviar a ClickUp
+                data = {
+                    'name': notion_page['Tarea'],
+                    'archived': False,
+                    'tags': ['trabajo'],
+                    'status': notion_page['Estado'],
+                    'priority': prioridad,
+                }
+                
+                print("🔄 Preparando datos para ClickUp:", data)
+                
+                
+                try:
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(f"https://api.clickup.com/api/v2/list/{list_id['list']}/task", headers=headers, json=data)
+                        print("🔄 Creando tarea en ClickUp...", response.status_code)
+
+                        if response.status_code == 200:
+                            id_tareas_creada = response.json().get("id", None)
+                            return id_tareas_creada
+                        else:
+                            raise ValueError(f"Error al crear la tarea: {response.text}")
+                        
+                except httpx.HTTPStatusError as e:
+                    raise httpx.HTTPStatusError(
+                        f"HTTP error occurred: {e.response.status_code} - {e.response.text}",
+                        request=e.request,
+                        response=e.response
+                    ) from e
+                        
+
+    except ValueError as e:
+        print(str(e))
+        return None
+    
+def filtrar_areas(spaces: List[dict], area_notion: str) -> List[dict]:
+    
+    info_area = {
+        "id": None,
+        "name": None,
+    }
+    
+    for space in spaces:
+       if space.name == area_notion:           
+           info_area["id"] = space.id
+           info_area["name"] = space.name
         
-# Obtener espacios
-async def get_spaces(team_id: str) -> list:
+    return info_area
+                 
+def filtrar_folders(folders: List[dict], subarea_notion: str) -> List[dict]:
     
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"https://api.clickup.com/api/v2/team/{team_id}/space", headers=headers)
-            # response.raise_for_status() 
-            
-            if response.status_code == 200:
-                raw_spaces = response.json().get("spaces", [])
-                spaces = []
-                for space_data in raw_spaces:
-                    try:
-                        spaces.append(Space(**space_data))
-                    except ValidationError as e:
-                        logging.error(f"Error de validación Pydantic al parsear un espacio: {e} - Datos: {space_data}")
-                        # Puedes decidir si quieres ignorar este espacio o lanzar una excepción
-                        continue 
-                
-                logging.info(f"Se obtuvieron {len(spaces)} espacios para el Team ID: '{team_id}'")
-                return spaces
-                
-            else:
-                raise Exception(f"Error al obtener los espacios: {response.text}")
-    except httpx.HTTPStatusError as e:
-        logging.error(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
-        raise
-        
-#Obtener folders de un espacio
-async def get_folders(space_id: str) -> list:
+    informacion_folder = {
+        "id": None,
+        "name": None,
+        "list": []
+    }
     
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"https://api.clickup.com/api/v2/space/{space_id}/folder", headers=headers)
-            response.raise_for_status()
-            
-            if response.status_code == 200:
-                raw_folders = response.json().get("folders", [])
-                
-                folders = []
-                for folder_data in raw_folders:
-                    try:
-                        folders.append(Folder(**folder_data))
-                    except ValidationError as e:
-                        logging.error(f"Error de validación Pydantic al parsear un folder: {e} - Datos: {folder_data}")
-                        continue
-                    
-                logging.info(f"Se obtuvieron {len(folders)} folders para el Space ID: '{space_id}'")
-                return folders
+    for folder in folders:
+        if folder.name == subarea_notion:
+            informacion_folder["id"] = folder.id
+            informacion_folder["name"] = folder.name
+            informacion_folder["list"] = folder.lists[0].id
+            break
 
-            else:
-                raise Exception(f"Error al obtener los folders: {response.text}")
-    except httpx.HTTPStatusError as e:
-        logging.error(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
-        raise
+    return informacion_folder
 
+def actualizar_tarea_clickup(id_clickup):
+    print("🔄 Actualizando tarea en ClickUp")
 
-    
-#Obenter tareas y verificar si existen
-async def get_tasks(list_id: str) -> list:
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"https://api.clickup.com/api/v2/list/{list_id}/task", headers=headers)
-            response.raise_for_status()
-            
-            if response.status_code == 200:
-                tasks = response.json().get("tasks", [])
-                logging.info(f"Se obtuvieron {len(tasks)} tareas para el List ID: '{list_id}'")
-                return tasks
-            else:
-                raise Exception(f"Error al obtener las tareas: {response.text}")
-    except httpx.HTTPStatusError as e:
-        logging.error(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
-        raise
+   

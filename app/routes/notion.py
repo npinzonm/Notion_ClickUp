@@ -1,18 +1,24 @@
+import re
 from typing import List
-from fastapi import APIRouter, Request, Header, HTTPException
-import hashlib
-import hmac
-import json
+from fastapi import APIRouter, Request, Header
+from fastapi.exceptions import HTTPException
 import os
 from dotenv import load_dotenv
 from fastapi.responses import JSONResponse
 
 from app.model.data_model import NotionPage
-from app.services.notion_service import get_notion_information
+from app.services.notion_service import complete_data_notion
+from app.routes.clickup import crear_tarea_clickup
 
 load_dotenv()  
 
 router = APIRouter()
+
+SUBCATEGORIA = "Subcategoría"
+SUBAREA = "Subarea"
+CATEGORIA = "Categoría"
+AREA = "Área"
+
 
 NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN")
 
@@ -27,97 +33,87 @@ async def receive_notion_event(
             status_code=403,
             content={"message": "Forbidden: Invalid Notion verification token"}
         )      
-        
+
     # Leer el body completo de la solicitud
-    body = await request.body()
-
+    body_bytes = await request.json()
+    notion_page = NotionPage(**body_bytes)
+    
     try:
-        organized_data = organize_data(body)
-    except Exception as e:
-        print("❌ Error organizando datos:", e)
-        return {"error": str(e)}
-
-    try:
-        info_notion = prepare_clickup_informacion(organized_data)
-        complete_information_notion = await get_notion_information(info_notion)
-        print("Información enriquecida de Notion:", complete_information_notion)
-
         
+        # dataPrueba = {'Prioridad': 'Urgente e Importante', 'Subcategoría': 'Reading, Writing', 'Repetir': None, 'Categoría': 'Inglés', 'Migrar': None, 'Fecha': '2025-07-09', 'Día': None, 'Subarea': 'ActiveIT', 'Área': 'Laboral', 'Estado': 'Open', 'Tarea': 'PRUEBA 2', 'ID_ClickUp': None}
         
 
-    except Exception as e:
+            
+            # id_tarea = await crear_tarea_clickup(dataPrueba)
+            
+            # if not id_tarea:
+            #     raise ValueError("No se pudo crear la tarea en ClickUp")
+            # else:
+            #     print("✅ Tarea creada en ClickUp con ID:", id_tarea)
+                
+        
+        info_notion = prepare_clickup_informacion(notion_page)        
+        complete_information_notion = await complete_data_notion(info_notion)        
+        combined_data = join_data(info_notion, complete_information_notion)
+        
+        print("🔄 Datos combinados de Notion:", combined_data)
+        
+
+
+    except ValueError as e:
         print("❌ Error procesando Notion event:", e)
         return {"error": str(e)}
 
     return {"status": "ok"}
-        
 
-        
-def prepare_clickup_informacion(data: NotionPage) -> dict:
-    
-    resultado = {}
+ 
+def extraer_valor(propiedad):
+    tipo = propiedad.type
 
-    for key, prop in data[0]["properties"].items():
-        if key == "Prioridad" and "name" in prop:
-            resultado["prioridad"] = prop["name"]
-        elif key == "Subcategoría" and "list" in prop:
-            resultado["subcategorias_ids"] = [item["id"] for item in prop["list"]]
-        elif key == "Repetir" and "boolean" in prop:
-            resultado["repetir"] = prop["boolean"]
-        elif key == "Día" and "string" in prop:
-            resultado["dia"] = prop["string"]
-        elif key == "Subárea" and "list" in prop:
-            resultado["subarea_ids"] = [item["id"] for item in prop["list"]]
-        elif key == "Estado" and "name" in prop:
-            resultado["estado"] = prop["name"]
-        elif key == "Tarea" and "list" in prop:
-            if prop["list"]:
-                resultado["titulo"] = prop["list"][0]["plain_text"]
+    manejadores = {
+        "select": lambda p: p.select.name if p.select else None,
+        "relation": lambda p: extraer_relation(p.relation),
+        "status": lambda p: p.status.name if p.status else None,
+        "date": lambda p: p.date.start if p.date else None,
+        "title": lambda p: p.title[0].plain_text if p.title else None,
+        "rich_text": lambda p: [text.plain_text for text in p.rich_text] if p.rich_text else None,
+    }
 
-    return resultado
+    return manejadores.get(tipo, lambda p: None)(propiedad)
 
 
-def organize_data(raw_data: bytes) -> List[dict]:
-    decoded = raw_data.decode("utf-8")
-    
-    # Extraer ID de página
-    page_id_match = re.match(r'^page([a-f0-9\-]+)', decoded)
-    if not page_id_match:
-        raise ValueError("No se encontró el ID de la página")
-    page_id = page_id_match.group(1)    
+def extraer_relation(relacion):
+    if not relacion:
+        return None
+    ids = [rel.id for rel in relacion]
+    return ",".join(ids) if len(ids) > 1 else ids[0]
 
-    # Extraer objetos JSON
-    json_matches = re.findall(r'\{.*?\}(?=\{|\Z)', decoded)
-    if len(json_matches) < 2:
-        raise ValueError("No se encontraron los objetos JSON")
-    
-    created_by = json.loads(json_matches[0])
-    properties_raw = json.loads(json_matches[1])
-    
-    
+def prepare_clickup_informacion(notion_page: NotionPage) -> dict:
+    propiedades = notion_page.data.properties.items()
+    resultados = {
+        campo: extraer_valor(propiedad)
+        for campo, propiedad in propiedades
+    }
+    return resultados
 
-    # Solo conservar propiedades que sean tipo dict
-    clean_properties = {}
-    
-    for key, value in properties_raw.items():
-        if isinstance(value, list):
-            # Asumimos que son relaciones o títulos
-            clean_properties[key] = {
-                "type": "list",
-                "list": value
-            }
-        elif isinstance(value, bool):
-            clean_properties[key] = {
-                "type": "boolean",
-                "boolean": value
-            }
-        else:
-            clean_properties[key] = value
-            
 
-    return [{
-        "object": "page",
-        "id": f"page_{page_id}",
-        "created_by": created_by,
-        "properties": clean_properties
-    }]
+def join_data(info_notion: dict, complete_information_notion: dict) -> dict:
+
+    if not complete_information_notion:
+        return info_notion
+
+    if "categorias" in complete_information_notion:
+        info_notion[CATEGORIA] = complete_information_notion["categorias"]
+
+    if "subcategorias" in complete_information_notion and SUBCATEGORIA in info_notion:
+        subcats = complete_information_notion["subcategorias"]
+        info_notion[SUBCATEGORIA] = ", ".join(subcats) if isinstance(subcats, list) else subcats
+
+    if "area" in complete_information_notion:
+        info_notion[AREA] = complete_information_notion["area"]
+
+    if "subarea" in complete_information_notion and SUBAREA in info_notion:
+        subarea = complete_information_notion["subarea"]
+        info_notion[SUBAREA] = ", ".join(subarea) if isinstance(subarea, list) else subarea
+
+    return info_notion

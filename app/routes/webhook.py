@@ -3,7 +3,8 @@ import hmac
 import json
 import os
 
-from fastapi import APIRouter, HTTPException, Request, Header
+from fastapi import APIRouter, Request, Header
+from fastapi.exceptions import HTTPException
 
 router = APIRouter()
 
@@ -43,15 +44,8 @@ async def notion_webhook(
     body_bytes = await request.body()
     payload_str = body_bytes.decode("utf-8")
 
+    # 📩 Procesar evento real
     print("🔗 Payload recibido:", payload_str)
 
-    try:
-        data = json.loads(payload_str)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="No se pudo decodificar el JSON")
-    
-    print("🔗 Datos decodificados:", data)
-    # 📩 Procesar evento real
-    print("📩 Webhook recibido:", data)
 
     return {"message": "Webhook recibido correctamente"}
