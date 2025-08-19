@@ -6,7 +6,7 @@ import os
 from fastapi import APIRouter, Request, Header
 from fastapi.exceptions import HTTPException
 
-from app.routes.notion import recibir_webhook_notion, webhook_notion
+from app.routes.notion import recibir_webhook_notion
 
 router = APIRouter()
 
