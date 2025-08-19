@@ -35,20 +35,13 @@ NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN")
 #             content={"message": "Forbidden: Invalid Notion verification token"}
 #         )      
 
-async def webhook_notion(payload_str: Request):
-    print("🔗 Recibiendo webhook de Notion (raw):", payload_str)
+
+async def recibir_webhook_notion(payload_str: Request):
 
     payload_dict = json.loads(payload_str)  # 👈 convertir string a dict
-
     notion_page = NotionPage(**payload_dict)
 
     print("✅ Webhook parseado:", notion_page)
-
-async def recibir_webhook_notion(request: Request):
-
-    notion_page = NotionPage(**request)
-    
-    print("🔗 Recibiendo webhook de Notion:", request)
     
     try:
         

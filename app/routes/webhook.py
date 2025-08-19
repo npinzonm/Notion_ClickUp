@@ -46,6 +46,6 @@ async def notion_webhook(
     body_bytes = await request.body()
     payload_str = body_bytes.decode("utf-8")
 
-    await webhook_notion(payload_str)
+    await recibir_webhook_notion(payload_str)
 
     return {"message": "Webhook recibido correctamente"}
