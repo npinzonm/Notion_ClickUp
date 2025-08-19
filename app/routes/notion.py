@@ -1,3 +1,4 @@
+import json
 import re
 from typing import List
 from fastapi import APIRouter, Request, Header
@@ -34,14 +35,14 @@ NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN")
 #             content={"message": "Forbidden: Invalid Notion verification token"}
 #         )      
 
-async def webhook_notion(request: Request):
-    print("🔗 Recibiendo webhook de Notion:", request)
-    dataJson = await request.json()
-    print("🔗 Datos recibidos de Notion:", dataJson)
+async def webhook_notion(payload_str: Request):
+    print("🔗 Recibiendo webhook de Notion (raw):", payload_str)
 
-    notion_page = NotionPage(**dataJson)
+    payload_dict = json.loads(payload_str)  # 👈 convertir string a dict
 
-    print("🔗 Recibiendo webhook de Notion:", notion_page)
+    notion_page = NotionPage(**payload_dict)
+
+    print("✅ Webhook parseado:", notion_page)
 
 async def recibir_webhook_notion(request: Request):
 
